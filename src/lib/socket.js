@@ -1,9 +1,6 @@
 import { io } from "socket.io-client";
 
-// ✅ CHANGE THIS to your PC LAN IP when staff uses phones/laptops.
-// Example: "http://192.168.1.10:5050"
-const SERVER_URL = import.meta.env.VITE_QUEUE_SERVER_URL || "http://localhost:5050";
+// Set on Vercel as VITE_QUEUE_SERVER_URL = https://your-render-service.onrender.com
+const SERVER_URL = import.meta.env.VITE_QUEUE_SERVER_URL;
 
-export const socket = io(SERVER_URL, {
-  transports: ["websocket"],
-});
+export const socket = io(SERVER_URL, { transports: ["websocket"] });
