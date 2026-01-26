@@ -7,6 +7,8 @@ import { refreshSocketAuth } from "../lib/socket";
 const SERVER_URL =
   import.meta.env.VITE_QUEUE_SERVER_URL || "http://localhost:5050";
 
+  console.log("SERVER_URL:", SERVER_URL);
+
 export default function StaffLogin() {
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
