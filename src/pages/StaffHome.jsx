@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { socket } from "../lib/socket";
+import { Link, useNavigate } from "react-router-dom";
+import { socket, refreshSocketAuth } from "../lib/socket";
+import { clearToken } from "../lib/auth";
 
 const COUNTERS = [
   { id: "counter1", label: "Counter 1" },
@@ -19,6 +20,7 @@ export default function StaffHome() {
 
   const [connected, setConnected] = useState(socket.connected);
   const [startAt, setStartAt] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     const onConnect = () => setConnected(true);
@@ -47,9 +49,20 @@ export default function StaffHome() {
   }
 
   function handleReset() {
-    const ok = confirm("Reset the queue? This will clear NOW SERVING for all counters and set Next Ticket back to 1.");
+    const ok = confirm(
+      "Reset the queue? This will clear NOW SERVING for all counters and set Next Ticket back to 1."
+    );
     if (!ok) return;
     socket.emit("queue:reset");
+  }
+
+  function handleLogout() {
+    const ok = confirm("Log out from staff access?");
+    if (!ok) return;
+
+    clearToken();
+    refreshSocketAuth();
+    navigate("/staff/login", { replace: true });
   }
 
   return (
@@ -57,21 +70,38 @@ export default function StaffHome() {
       <div className="mx-auto max-w-3xl px-3 sm:px-6 py-10">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Staff</h1>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+              Staff
+            </h1>
             <p className="mt-1 text-sm text-gray-600">
               Choose your assigned counter. Status:{" "}
-              <span className={connected ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>
+              <span
+                className={
+                  connected
+                    ? "font-semibold text-emerald-700"
+                    : "font-semibold text-rose-700"
+                }
+              >
                 {connected ? "Connected" : "Disconnected"}
               </span>
             </p>
           </div>
 
-          <Link
-            to="/display"
-            className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm hover:bg-gray-50"
-          >
-            TV Display →
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              to="/display"
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm hover:bg-gray-50"
+            >
+              TV Display →
+            </Link>
+
+            <button
+              onClick={handleLogout}
+              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-100"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Counters */}
@@ -88,8 +118,12 @@ export default function StaffHome() {
                   <div className="text-sm text-gray-600">Open control page</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xs font-semibold tracking-widest text-gray-500">NOW</div>
-                  <div className="text-2xl font-semibold tabular-nums">{pad(state.counters[c.id])}</div>
+                  <div className="text-xs font-semibold tracking-widest text-gray-500">
+                    NOW
+                  </div>
+                  <div className="text-2xl font-semibold tabular-nums">
+                    {pad(state.counters[c.id])}
+                  </div>
                 </div>
               </div>
             </Link>
@@ -98,12 +132,16 @@ export default function StaffHome() {
 
         {/* Controls: Start At + Reset */}
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold tracking-widest text-gray-500">QUEUE CONTROLS</p>
+          <p className="text-xs font-semibold tracking-widest text-gray-500">
+            QUEUE CONTROLS
+          </p>
 
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
               <p className="text-sm font-semibold">Next Ticket</p>
-              <p className="mt-1 text-3xl font-semibold tabular-nums">{pad(state.nextTicket)}</p>
+              <p className="mt-1 text-3xl font-semibold tabular-nums">
+                {pad(state.nextTicket)}
+              </p>
               <p className="mt-1 text-xs text-gray-600">
                 This is the next paper number that will be called by any counter.
               </p>
@@ -148,7 +186,8 @@ export default function StaffHome() {
         <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
           <p className="text-sm font-semibold text-emerald-900">TV Display</p>
           <p className="mt-1 text-sm text-emerald-900/90">
-            Open this on the PC connected to the TV: <span className="font-semibold">/display</span>
+            Open this on the PC connected to the TV:{" "}
+            <span className="font-semibold">/display</span>
           </p>
         </div>
       </div>
