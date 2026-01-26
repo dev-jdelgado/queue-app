@@ -6,7 +6,7 @@ import { Server } from "socket.io";
 const app = express();
 
 // ✅ Put your Vercel URL here via env var (e.g. https://school-queue.vercel.app)
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5050";
 
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json());

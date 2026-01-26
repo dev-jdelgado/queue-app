@@ -1,6 +1,8 @@
 import { io } from "socket.io-client";
 
-// Set on Vercel as VITE_QUEUE_SERVER_URL = https://your-render-service.onrender.com
-const SERVER_URL = import.meta.env.VITE_QUEUE_SERVER_URL;
+const SERVER_URL =
+  import.meta.env.VITE_QUEUE_SERVER_URL || "http://localhost:5050";
 
-export const socket = io(SERVER_URL, { transports: ["websocket"] });
+export const socket = io(SERVER_URL, {
+  transports: ["websocket"],
+});
