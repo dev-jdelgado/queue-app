@@ -1,28 +1,59 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../lib/socket";
 
 const COUNTERS = [
-  { id: "counter1", name: "Counter 1" },
-  { id: "counter2", name: "Counter 2" },
-  { id: "counter3", name: "Counter 3" },
+  { id: "counter1", name: "Table 1" },
+  { id: "counter2", name: "Table 2" },
+  { id: "counter3", name: "Table 3" },
 ];
 
 const pad = (n) => (n == null ? "—" : String(n).padStart(3, "0"));
+
+function speak(text, opts = {}) {
+  if (typeof window === "undefined") return;
+  if (!("speechSynthesis" in window)) return;
+
+  const { lang = "en-US", rate = 0.95, pitch = 1, volume = 1 } = opts;
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = rate;
+  utterance.pitch = pitch;
+  utterance.volume = volume;
+
+  window.speechSynthesis.speak(utterance);
+}
 
 export default function DisplayTV() {
   const [state, setState] = useState({
     nextTicket: 1,
     counters: { counter1: null, counter2: null, counter3: null },
-    lastCall: null, // best if shape includes: { counterId: "counter1", ticket: 12 }
+    lastCall: null,
   });
 
+  const audioRef = useRef(null);
+  const prevCallKeyRef = useRef("");
+  const [unlocked, setUnlocked] = useState(false);
+
   useEffect(() => {
+    audioRef.current = new Audio("/sounds/ding.mp3");
+    audioRef.current.preload = "auto";
+    audioRef.current.volume = 1;
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+
     const onState = (s) => setState(s);
     socket.on("queue:state", onState);
     return () => socket.off("queue:state", onState);
   }, []);
 
-  // Derive "current serving + counter" for the big display
   const current = useMemo(() => {
     const counterId =
       state.lastCall?.counterId ||
@@ -36,11 +67,8 @@ export default function DisplayTV() {
 
     const meta = COUNTERS.find((c) => c.id === counterId);
 
-    if (counterId && meta) {
-      return { ticket, counterName: meta.name, counterId };
-    }
+    if (counterId && meta) return { ticket, counterName: meta.name, counterId };
 
-    // fallback: first counter that has a value
     const active = COUNTERS.find((c) => state.counters?.[c.id] != null);
     if (active) {
       return {
@@ -53,66 +81,124 @@ export default function DisplayTV() {
     return { ticket: null, counterName: "—", counterId: null };
   }, [state.counters, state.lastCall]);
 
+  // ✅ Ding first, then voice (wait for audio "ended")
+  useEffect(() => {
+    if (!state.lastCall) return;
+
+    const counterId =
+      state.lastCall?.counterId ||
+      state.lastCall?.counter ||
+      state.lastCall?.counter_id;
+
+    const ticket = state.lastCall?.ticket ?? state.lastCall?.number;
+
+    if (!counterId || ticket == null) return;
+
+    const callKey = `${counterId}:${ticket}`;
+    if (callKey === prevCallKeyRef.current) return;
+    prevCallKeyRef.current = callKey;
+
+    const counterName =
+      COUNTERS.find((c) => c.id === counterId)?.name ?? "the counter";
+
+    // Digit-by-digit for clarity
+    const digits = String(ticket).padStart(3, "0").split("").join(" ");
+    const spokenText = `Number ${digits}. Please go to ${counterName}.`;
+
+    const a = audioRef.current;
+
+    const doSpeak = () => {
+      speak(spokenText, {
+        lang: "en-US",
+        rate: 0.95,
+        pitch: 1,
+        volume: 1,
+      });
+    };
+
+    if (!a) {
+      doSpeak();
+      return;
+    }
+
+    // Remove any previous handlers so it doesn't stack up
+    a.onended = null;
+    a.onpause = null;
+
+    // Speak only when ding finishes
+    a.onended = () => doSpeak();
+
+    // Play ding from start
+    a.currentTime = 0;
+
+    const playPromise = a.play();
+
+    // Fallback: if autoplay is blocked or play fails, speak anyway after a short delay
+    if (playPromise?.catch) {
+      playPromise.catch(() => {
+        setTimeout(doSpeak, 300);
+      });
+    } else {
+      // Older browsers: still do a safe fallback
+      setTimeout(doSpeak, 600);
+    }
+  }, [state.lastCall]);
+
+  const handleEnableSound = async () => {
+    const a = audioRef.current;
+    if (a) {
+      try {
+        a.currentTime = 0;
+        await a.play();
+        a.pause();
+        a.currentTime = 0;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    try {
+      speak("Audio enabled.", { rate: 1, volume: 0.8 });
+    } catch (e) {
+      // ignore
+    }
+
+    setUnlocked(true);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* Center everything on the TV */}
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-full px-20 py-10">
+        <div className="w-full px-12 py-10">
           {/* Header */}
           <div className="flex items-end justify-between gap-4">
             <div>
-              <h1 className="text-4xl sm:text-6xl font-semibold tracking-tight">
+              <h1 className="text-5xl sm:text-7xl font-semibold tracking-tight">
                 NOW SERVING
               </h1>
             </div>
 
             <div className="text-right">
-              <p className="text-xl sm:text-2xl text-slate-500">NEXT TICKET</p>
-              <p className="text-5xl sm:text-7xl font-semibold tabular-nums">
+              <p className="text-2xl sm:text-4xl text-slate-500">NEXT NUMBER</p>
+              <p className="text-6xl sm:text-8xl font-semibold tabular-nums">
                 {pad(state.nextTicket)}
               </p>
             </div>
           </div>
 
-          {/* BIG Current Serving + Counter (same old box style) */}
-          <div className="mt-7 rounded-3xl bg-white border border-slate-200 p-6 sm:p-8 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="">
-                <p className="text-base sm:text-xl font-semibold text-slate-700">
-                  Current Serving
-                </p>
-
-                <p className="mt-3 text-[5.5rem] sm:text-[7.5rem] md:text-[15rem] leading-none font-semibold tabular-nums text-slate-900">
-                  {pad(current.ticket)}
-                </p>
-              </div>
-              
-
-              {/* Inner box (old style) */}
-              <div className="mt-5 w-full max-w-2xl rounded-3xl bg-slate-50 border border-slate-200 p-6 sm:p-7">
-                <p className="text-xl sm:text-3xl text-slate-600">
-                  Please proceed to
-                </p>
-                <p className="mt-2 text-4xl sm:text-7xl font-semibold text-slate-900">
-                  {current.counterName}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Counter boxes (retain old design) */}
-          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
+          {/* Counter boxes */}
+          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
             {COUNTERS.map((c) => (
               <div
                 key={c.id}
                 className="rounded-3xl bg-white border border-slate-200 p-6 sm:p-7 shadow-sm"
               >
-                <p className="text-2xl sm:text-3xl font-semibold text-slate-900">
+                <p className="text-4xl sm:text-5xl font-semibold text-slate-900">
                   {c.name}
                 </p>
 
-                <div className="mt-6 rounded-3xl bg-slate-50 border border-slate-200 p-6 sm:p-7">
-                  <p className="text-xl sm:text-2xl text-slate-600">
+                <div className="mt-6 rounded-3xl bg-slate-50 border border-slate-200 px-5 xl:px-7 py-7">
+                  <p className="text-2xl sm:text-4xl text-slate-600">
                     Now Serving
                   </p>
                   <p className="mt-2 text-6xl sm:text-7xl md:text-9xl font-semibold tabular-nums text-slate-900 leading-none">
@@ -123,6 +209,29 @@ export default function DisplayTV() {
             ))}
           </div>
 
+          {/* Enable sound / TTS */}
+          <div className="mt-7 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-6 py-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                Audio Announcements
+              </p>
+              <p className="text-xs text-slate-500">
+                If you don’t hear the voice, click enable once (browser autoplay
+                policy).
+              </p>
+            </div>
+
+            <button
+              onClick={handleEnableSound}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                unlocked
+                  ? "bg-emerald-600 text-white"
+                  : "bg-slate-900 text-white hover:bg-slate-800"
+              }`}
+            >
+              {unlocked ? "Enabled" : "Enable Sound"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

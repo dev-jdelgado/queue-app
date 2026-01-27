@@ -4,9 +4,9 @@ import { socket, refreshSocketAuth } from "../lib/socket";
 import { clearToken } from "../lib/auth";
 
 const COUNTERS = [
-  { id: "counter1", label: "Counter 1" },
-  { id: "counter2", label: "Counter 2" },
-  { id: "counter3", label: "Counter 3" },
+  { id: "counter1", label: "Table 1" },
+  { id: "counter2", label: "Table 2" },
+  { id: "counter3", label: "Table 3" },
 ];
 
 const pad = (n) => (n == null ? "—" : String(n).padStart(3, "0"));
@@ -50,7 +50,7 @@ export default function StaffHome() {
 
   function handleReset() {
     const ok = confirm(
-      "Reset the queue? This will clear NOW SERVING for all counters and set Next Ticket back to 1."
+      "Reset the queue? This will clear NOW SERVING for all tables and set Next Ticket back to 1."
     );
     if (!ok) return;
     socket.emit("queue:reset");
@@ -74,7 +74,7 @@ export default function StaffHome() {
               Staff
             </h1>
             <p className="mt-1 text-sm text-gray-600">
-              Choose your assigned counter. Status:{" "}
+              Choose your assigned table. Status:{" "}
               <span
                 className={
                   connected
@@ -143,7 +143,7 @@ export default function StaffHome() {
                 {pad(state.nextTicket)}
               </p>
               <p className="mt-1 text-xs text-gray-600">
-                This is the next paper number that will be called by any counter.
+                This is the next paper number that will be called by any table.
               </p>
             </div>
 
@@ -178,7 +178,7 @@ export default function StaffHome() {
               Reset Queue
             </button>
             <p className="mt-2 text-xs text-gray-600">
-              Reset clears Now Serving for all counters and sets next ticket back to 1.
+              Reset clears Now Serving for all tables and sets next ticket back to 1.
             </p>
           </div>
         </div>
