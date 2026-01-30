@@ -84,85 +84,116 @@ export default function DisplayTV() {
   // ✅ Ding first, then voice (wait for audio "ended")
   useEffect(() => {
     if (!state.lastCall) return;
-
+  
     const counterId =
       state.lastCall?.counterId ||
       state.lastCall?.counter ||
       state.lastCall?.counter_id;
-
+  
     const ticket = state.lastCall?.ticket ?? state.lastCall?.number;
-
+  
     if (!counterId || ticket == null) return;
-
+  
     const callKey = `${counterId}:${ticket}`;
     if (callKey === prevCallKeyRef.current) return;
     prevCallKeyRef.current = callKey;
-
+  
     const counterName =
       COUNTERS.find((c) => c.id === counterId)?.name ?? "the counter";
-
-    // Digit-by-digit for clarity
+  
     const digits = String(ticket).padStart(3, "0").split("").join(" ");
     const spokenText = `Number ${digits}. Please go to ${counterName}.`;
-
+  
     const a = audioRef.current;
-
+  
     const doSpeak = () => {
-      speak(spokenText, {
-        lang: "en-US",
-        rate: 0.95,
-        pitch: 1,
-        volume: 1,
-      });
+      speak(spokenText, { lang: "en-US", rate: 0.95, pitch: 1, volume: 1 });
     };
-
+  
+    // If no audio object, just speak
     if (!a) {
       doSpeak();
       return;
     }
-
-    // Remove any previous handlers so it doesn't stack up
-    a.onended = null;
-    a.onpause = null;
-
-    // Speak only when ding finishes
-    a.onended = () => doSpeak();
-
-    // Play ding from start
-    a.currentTime = 0;
-
+  
+    // Clean previous listeners
+    const onEnded = () => {
+      cleanup();
+      doSpeak();
+    };
+  
+    const cleanup = () => {
+      a.removeEventListener("ended", onEnded);
+    };
+  
+    a.addEventListener("ended", onEnded);
+  
+    // Start from beginning
+    try {
+      a.pause();
+      a.currentTime = 0;
+    } catch {}
+  
+    const fallbackDelayMs = (() => {
+      // Use real duration if available; otherwise a safe default
+      const d = Number(a.duration);
+      if (Number.isFinite(d) && d > 0) return Math.min(1200, Math.max(250, d * 1000));
+      return 600;
+    })();
+  
+    let spoke = false;
+  
+    // Desktop-safe fallback: speak even if "ended" never fires
+    const fallbackTimer = setTimeout(() => {
+      if (!spoke) {
+        cleanup();
+        spoke = true;
+        doSpeak();
+      }
+    }, fallbackDelayMs + 150);
+  
     const playPromise = a.play();
-
-    // Fallback: if autoplay is blocked or play fails, speak anyway after a short delay
-    if (playPromise?.catch) {
-      playPromise.catch(() => {
-        setTimeout(doSpeak, 300);
-      });
+  
+    if (playPromise?.then) {
+      playPromise
+        .then(() => {
+          // ok; wait for ended or fallback
+        })
+        .catch(() => {
+          // Autoplay blocked: speak anyway
+          clearTimeout(fallbackTimer);
+          cleanup();
+          doSpeak();
+        });
     } else {
-      // Older browsers: still do a safe fallback
-      setTimeout(doSpeak, 600);
+      // Older browser: rely on ended/fallback
     }
+  
+    return () => {
+      clearTimeout(fallbackTimer);
+      cleanup();
+    };
   }, [state.lastCall]);
 
   const handleEnableSound = async () => {
     const a = audioRef.current;
+  
+    // 1) Unlock audio
     if (a) {
       try {
-        a.currentTime = 0;
+        a.muted = true;
         await a.play();
         a.pause();
         a.currentTime = 0;
-      } catch (e) {
-        // ignore
-      }
+        a.muted = false;
+      } catch {}
     }
-
+  
+    // 2) Unlock TTS
     try {
-      speak("Audio enabled.", { rate: 1, volume: 0.8 });
-    } catch (e) {
-      // ignore
-    }
-
+      speak("Audio enabled.", { volume: 0.8, rate: 1 });
+    } catch {}
+  
     setUnlocked(true);
   };
 
