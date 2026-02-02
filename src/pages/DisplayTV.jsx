@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../lib/socket";
 
-const COUNTERS = [
-  { id: "counter1", name: "Table 1" },
-  { id: "counter2", name: "Table 2" },
-  { id: "counter3", name: "Table 3" },
-];
-
 const pad = (n) => (n == null ? "—" : String(n).padStart(3, "0"));
 
 function speak(text, opts = {}) {
@@ -26,12 +20,45 @@ function speak(text, opts = {}) {
   window.speechSynthesis.speak(utterance);
 }
 
-export default function DisplayTV() {
-  const [state, setState] = useState({
-    nextTicket: 1,
-    counters: { counter1: null, counter2: null, counter3: null },
-    lastCall: null,
-  });
+function getCounters(tvId) {
+  if (tvId === "TV_B") {
+    return [
+      { id: "table1", name: "Table 1" },
+      { id: "table2", name: "Table 2" },
+      { id: "table3", name: "Table 3" },
+      { id: "table4", name: "Table 4" },
+      { id: "table5", name: "Table 5" },
+      { id: "table6", name: "Table 6" },
+    ];
+  }
+
+  // Default (TV_A)
+  return [
+    { id: "counter1", name: "Table 1" },
+    { id: "counter2", name: "Table 2" },
+    { id: "counter3", name: "Table 3" },
+  ];
+}
+
+function defaultGroup(tvId) {
+  const counters = getCounters(tvId).reduce((acc, c) => {
+    acc[c.id] = null;
+    return acc;
+  }, {});
+  return { nextTicket: 1, counters, lastCall: null };
+}
+
+export default function DisplayTV({ tvId = "TV_A" }) {
+  const COUNTERS = useMemo(() => getCounters(tvId), [tvId]);
+
+  const [rootState, setRootState] = useState(() => ({
+    groups: {
+      TV_A: defaultGroup("TV_A"),
+      TV_B: defaultGroup("TV_B"),
+    },
+  }));
+
+  const state = rootState.groups?.[tvId] ?? defaultGroup(tvId);
 
   const audioRef = useRef(null);
   const prevCallKeyRef = useRef("");
@@ -49,20 +76,19 @@ export default function DisplayTV() {
       };
     }
 
-    const onState = (s) => setState(s);
+    const onState = (s) => setRootState(s);
     socket.on("queue:state", onState);
     return () => socket.off("queue:state", onState);
   }, []);
 
   const current = useMemo(() => {
-    const counterId =
-      state.lastCall?.counterId ||
-      state.lastCall?.counter ||
-      state.lastCall?.counter_id;
+    const last = state.lastCall;
+
+    const counterId = last?.counterId || last?.counter || last?.counter_id || null;
 
     const ticket =
-      state.lastCall?.ticket ??
-      state.lastCall?.number ??
+      last?.ticket ??
+      last?.number ??
       (counterId ? state.counters?.[counterId] : null);
 
     const meta = COUNTERS.find((c) => c.id === counterId);
@@ -79,70 +105,74 @@ export default function DisplayTV() {
     }
 
     return { ticket: null, counterName: "—", counterId: null };
-  }, [state.counters, state.lastCall]);
+  }, [COUNTERS, state.counters, state.lastCall]);
 
   // ✅ Ding first, then voice (wait for audio "ended")
   useEffect(() => {
     if (!state.lastCall) return;
-  
+
+    // Ignore announcements for other TVs (safety if server sends global lastCall)
+    const lastTvId = state.lastCall?.tvId;
+    if (lastTvId && lastTvId !== tvId) return;
+
     const counterId =
       state.lastCall?.counterId ||
       state.lastCall?.counter ||
       state.lastCall?.counter_id;
-  
+
     const ticket = state.lastCall?.ticket ?? state.lastCall?.number;
-  
+
     if (!counterId || ticket == null) return;
-  
-    const callKey = `${counterId}:${ticket}`;
+
+    const callKey = `${tvId}:${counterId}:${ticket}`;
     if (callKey === prevCallKeyRef.current) return;
     prevCallKeyRef.current = callKey;
-  
+
     const counterName =
       COUNTERS.find((c) => c.id === counterId)?.name ?? "the counter";
-  
+
     const digits = String(ticket).padStart(3, "0").split("").join(" ");
     const spokenText = `Number ${digits}. Please go to ${counterName}.`;
-  
+
     const a = audioRef.current;
-  
+
     const doSpeak = () => {
       speak(spokenText, { lang: "en-US", rate: 0.95, pitch: 1, volume: 1 });
     };
-  
+
     // If no audio object, just speak
     if (!a) {
       doSpeak();
       return;
     }
-  
+
     // Clean previous listeners
     const onEnded = () => {
       cleanup();
       doSpeak();
     };
-  
+
     const cleanup = () => {
       a.removeEventListener("ended", onEnded);
     };
-  
+
     a.addEventListener("ended", onEnded);
-  
+
     // Start from beginning
     try {
       a.pause();
       a.currentTime = 0;
     } catch {}
-  
+
     const fallbackDelayMs = (() => {
       // Use real duration if available; otherwise a safe default
       const d = Number(a.duration);
       if (Number.isFinite(d) && d > 0) return Math.min(1200, Math.max(250, d * 1000));
       return 600;
     })();
-  
+
     let spoke = false;
-  
+
     // Desktop-safe fallback: speak even if "ended" never fires
     const fallbackTimer = setTimeout(() => {
       if (!spoke) {
@@ -151,9 +181,9 @@ export default function DisplayTV() {
         doSpeak();
       }
     }, fallbackDelayMs + 150);
-  
+
     const playPromise = a.play();
-  
+
     if (playPromise?.then) {
       playPromise
         .then(() => {
@@ -165,19 +195,17 @@ export default function DisplayTV() {
           cleanup();
           doSpeak();
         });
-    } else {
-      // Older browser: rely on ended/fallback
     }
-  
+
     return () => {
       clearTimeout(fallbackTimer);
       cleanup();
     };
-  }, [state.lastCall]);
+  }, [COUNTERS, state.lastCall, tvId]);
 
   const handleEnableSound = async () => {
     const a = audioRef.current;
-  
+
     // 1) Unlock audio
     if (a) {
       try {
@@ -188,14 +216,16 @@ export default function DisplayTV() {
         a.muted = false;
       } catch {}
     }
-  
+
     // 2) Unlock TTS
     try {
       speak("Audio enabled.", { volume: 0.8, rate: 1 });
     } catch {}
-  
+
     setUnlocked(true);
   };
+
+  const tvLabel = tvId === "TV_B" ? "TV B" : "TV A";
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -204,21 +234,18 @@ export default function DisplayTV() {
           {/* Header */}
           <div className="flex items-end justify-between gap-4">
             <div>
-              <h1 className="text-5xl sm:text-7xl font-semibold tracking-tight">
-                NOW SERVING
-              </h1>
-            </div>
-
-            <div className="text-right">
-              <p className="text-2xl sm:text-4xl text-slate-500">NEXT NUMBER</p>
-              <p className="text-6xl sm:text-8xl font-semibold tabular-nums">
-                {pad(state.nextTicket)}
-              </p>
+              <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">
+                {tvLabel}
+              </div>
             </div>
           </div>
 
           {/* Counter boxes */}
-          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div
+            className={`mt-8 grid grid-cols-1 gap-6 ${
+              tvId === "TV_B" ? "lg:grid-cols-3" : "lg:grid-cols-3"
+            }`}
+          >
             {COUNTERS.map((c) => (
               <div
                 key={c.id}
@@ -233,7 +260,7 @@ export default function DisplayTV() {
                     Now Serving
                   </p>
                   <p className="mt-2 text-6xl sm:text-7xl md:text-9xl font-semibold tabular-nums text-slate-900 leading-none">
-                    {pad(state.counters[c.id])}
+                    {pad(state.counters?.[c.id])}
                   </p>
                 </div>
               </div>
@@ -262,6 +289,12 @@ export default function DisplayTV() {
             >
               {unlocked ? "Enabled" : "Enable Sound"}
             </button>
+          </div>
+
+          {/* Tiny hint */}
+          <div className="mt-3 text-xs text-slate-500">
+            Routes: <span className="font-semibold">/display</span> (TV A),{" "}
+            <span className="font-semibold">/display-b</span> (TV B)
           </div>
         </div>
       </div>

@@ -1,22 +1,43 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { socket, refreshSocketAuth } from "../lib/socket";
 import { clearToken } from "../lib/auth";
 
-const COUNTERS = [
-  { id: "counter1", label: "Table 1" },
-  { id: "counter2", label: "Table 2" },
-  { id: "counter3", label: "Table 3" },
-];
-
 const pad = (n) => (n == null ? "—" : String(n).padStart(3, "0"));
 
-export default function StaffHome() {
-  const [state, setState] = useState({
-    nextTicket: 1,
-    counters: { counter1: null, counter2: null, counter3: null },
-    lastCall: null,
-  });
+function getCounters(tvId) {
+  if (tvId === "TV_B") {
+    return [
+      { id: "table1", label: "Table 1" },
+      { id: "table2", label: "Table 2" },
+      { id: "table3", label: "Table 3" },
+      { id: "table4", label: "Table 4" },
+      { id: "table5", label: "Table 5" },
+      { id: "table6", label: "Table 6" },
+    ];
+  }
+
+  return [
+    { id: "counter1", label: "Table 1" },
+    { id: "counter2", label: "Table 2" },
+    { id: "counter3", label: "Table 3" },
+  ];
+}
+
+function defaultGroup(tvId) {
+  const counters = {};
+  for (const c of getCounters(tvId)) counters[c.id] = null;
+  return { nextTicket: 1, counters, lastCall: null };
+}
+
+export default function StaffHome({ tvId = "TV_A" }) {
+  const COUNTERS = useMemo(() => getCounters(tvId), [tvId]);
+
+  const [rootState, setRootState] = useState(() => ({
+    groups: { TV_A: defaultGroup("TV_A"), TV_B: defaultGroup("TV_B") },
+  }));
+
+  const state = rootState.groups?.[tvId] ?? defaultGroup(tvId);
 
   const [connected, setConnected] = useState(socket.connected);
   const [startAt, setStartAt] = useState("");
@@ -25,7 +46,7 @@ export default function StaffHome() {
   useEffect(() => {
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
-    const onState = (s) => setState(s);
+    const onState = (s) => setRootState(s);
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
@@ -44,7 +65,7 @@ export default function StaffHome() {
       alert("Please enter a valid Start At number (1 and above).");
       return;
     }
-    socket.emit("queue:setStart", { startNumber: n });
+    socket.emit("queue:setStart", { tvId, startNumber: n });
     setStartAt("");
   }
 
@@ -53,7 +74,7 @@ export default function StaffHome() {
       "Reset the queue? This will clear NOW SERVING for all tables and set Next Ticket back to 1."
     );
     if (!ok) return;
-    socket.emit("queue:reset");
+    socket.emit("queue:reset", { tvId });
   }
 
   function handleLogout() {
@@ -65,14 +86,29 @@ export default function StaffHome() {
     navigate("/staff/login", { replace: true });
   }
 
+  const tvRoute = tvId === "TV_B" ? "/display-b" : "/display";
+  const counterBaseRoute = tvId === "TV_B" ? "/staff-b" : "/staff-a";
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <div className="mx-auto max-w-3xl px-3 sm:px-6 py-10">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-              Staff
+            <Link
+              to="/staff"
+              className="text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+            >
+              ← Back to staff selection
+            </Link>
+
+            <div className="mt-5 inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700">
+              {tvId === "TV_B" ? "Staff — 6 Tables (TV B)" : "Staff — 3 Tables (TV A)"}
+            </div>
+
+            <h1 className="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight">
+              Staff Home
             </h1>
+
             <p className="mt-1 text-sm text-gray-600">
               Choose your assigned table. Status:{" "}
               <span
@@ -89,7 +125,7 @@ export default function StaffHome() {
 
           <div className="flex gap-2">
             <Link
-              to="/display"
+              to={tvRoute}
               className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm hover:bg-gray-50"
             >
               TV Display →
@@ -105,11 +141,11 @@ export default function StaffHome() {
         </div>
 
         {/* Counters */}
-        <div className="mt-6 grid grid-cols-1 gap-3">
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {COUNTERS.map((c) => (
             <Link
               key={c.id}
-              to={`/staff/${c.id}`}
+              to={`${counterBaseRoute}/${c.id}`}
               className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm hover:bg-gray-50"
             >
               <div className="flex items-center justify-between">
@@ -122,7 +158,7 @@ export default function StaffHome() {
                     NOW
                   </div>
                   <div className="text-2xl font-semibold tabular-nums">
-                    {pad(state.counters[c.id])}
+                    {pad(state.counters?.[c.id])}
                   </div>
                 </div>
               </div>
@@ -130,7 +166,7 @@ export default function StaffHome() {
           ))}
         </div>
 
-        {/* Controls: Start At + Reset */}
+        {/* Controls */}
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold tracking-widest text-gray-500">
             QUEUE CONTROLS
@@ -143,7 +179,7 @@ export default function StaffHome() {
                 {pad(state.nextTicket)}
               </p>
               <p className="mt-1 text-xs text-gray-600">
-                This is the next paper number that will be called by any table.
+                This is the next paper number that will be called by any table in this TV group.
               </p>
             </div>
 
@@ -178,7 +214,7 @@ export default function StaffHome() {
               Reset Queue
             </button>
             <p className="mt-2 text-xs text-gray-600">
-              Reset clears Now Serving for all tables and sets next ticket back to 1.
+              Reset clears Now Serving for all tables in this TV group and sets next ticket back to 1.
             </p>
           </div>
         </div>
@@ -187,7 +223,7 @@ export default function StaffHome() {
           <p className="text-sm font-semibold text-emerald-900">TV Display</p>
           <p className="mt-1 text-sm text-emerald-900/90">
             Open this on the PC connected to the TV:{" "}
-            <span className="font-semibold">/display</span>
+            <span className="font-semibold">{tvRoute}</span>
           </p>
         </div>
       </div>

@@ -51,8 +51,8 @@ export default function StaffLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      <div className="mx-auto max-w-md px-3 sm:px-6 py-12">
+    <div className="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center">
+      <div className="w-full max-w-md px-3 sm:px-6">
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <h1 className="text-2xl font-semibold tracking-tight">Staff Login</h1>
           <p className="mt-1 text-sm text-gray-600">
@@ -82,11 +82,22 @@ export default function StaffLogin() {
             </button>
           </form>
 
-          <div className="mt-4 flex items-center justify-between">
-            <Link to="/display" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">
-              View TV Display →
+          <div className="mt-4 space-y-2">
+            <Link
+              to="/display"
+              className="block text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+            >
+              View TV Display (3 Tables) →
+            </Link>
+
+            <Link
+              to="/display-b"
+              className="block text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+            >
+              View TV Display (6 Tables) →
             </Link>
           </div>
+
         </div>
       </div>
     </div>

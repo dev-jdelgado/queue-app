@@ -24,12 +24,34 @@ const io = new Server(httpServer, {
   },
 });
 
-// --- Shared state ---
-let state = {
-  nextTicket: 1,
-  counters: { counter1: null, counter2: null, counter3: null },
-  lastCall: null,
+/**
+ * Multi-TV Queue State
+ * - TV_A: existing (3 tables)
+ * - TV_B: new (6 tables)
+ */
+function makeGroup(countersShape) {
+  return {
+    nextTicket: 1,
+    counters: { ...countersShape },
+    lastCall: null,
+  };
+}
+
+const DEFAULT_STATE = {
+  groups: {
+    TV_A: makeGroup({ counter1: null, counter2: null, counter3: null }),
+    TV_B: makeGroup({
+      table1: null,
+      table2: null,
+      table3: null,
+      table4: null,
+      table5: null,
+      table6: null,
+    }),
+  },
 };
+
+let state = JSON.parse(JSON.stringify(DEFAULT_STATE));
 
 function broadcast() {
   io.emit("queue:state", state);
@@ -55,40 +77,51 @@ function isStaff(socket) {
   return socket.data.user?.role === "staff";
 }
 
+function normalizeTvId(tvId) {
+  return tvId === "TV_B" ? "TV_B" : "TV_A";
+}
+
 io.on("connection", (socket) => {
   socket.emit("queue:state", state);
 
   // ✅ Staff-only actions
-  socket.on("queue:next", ({ counterId }) => {
+  socket.on("queue:next", ({ tvId, counterId } = {}) => {
     if (!isStaff(socket)) return;
 
-    const validCounters = ["counter1", "counter2", "counter3"];
+    const groupId = normalizeTvId(tvId);
+    const group = state.groups[groupId];
+    if (!group) return;
+
+    const validCounters = Object.keys(group.counters || {});
     if (!validCounters.includes(counterId)) return;
 
-    const ticket = state.nextTicket;
-    state.nextTicket += 1;
-    state.counters[counterId] = ticket;
-    state.lastCall = { ticket, counterId, at: Date.now() };
+    const ticket = group.nextTicket;
+    group.nextTicket += 1;
+    group.counters[counterId] = ticket;
+
+    group.lastCall = { tvId: groupId, ticket, counterId, at: Date.now() };
     broadcast();
   });
 
-  socket.on("queue:reset", () => {
+  socket.on("queue:reset", ({ tvId } = {}) => {
     if (!isStaff(socket)) return;
 
-    state = {
-      nextTicket: 1,
-      counters: { counter1: null, counter2: null, counter3: null },
-      lastCall: null,
-    };
+    const groupId = normalizeTvId(tvId);
+    state.groups[groupId] = JSON.parse(JSON.stringify(DEFAULT_STATE.groups[groupId]));
     broadcast();
   });
 
-  socket.on("queue:setStart", ({ startNumber }) => {
+  socket.on("queue:setStart", ({ tvId, startNumber } = {}) => {
     if (!isStaff(socket)) return;
+
+    const groupId = normalizeTvId(tvId);
+    const group = state.groups[groupId];
+    if (!group) return;
 
     const n = Number(startNumber);
     if (!Number.isFinite(n) || n < 1) return;
-    state.nextTicket = Math.floor(n);
+
+    group.nextTicket = Math.floor(n);
     broadcast();
   });
 });
